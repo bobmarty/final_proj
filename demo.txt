@@ -1,0 +1,50 @@
+SMART ESG PERFORMANCE MONITORING SYSTEM WORKFLOW
+
+1. Data Collection Phase
+   - ESG dataset collected from research papers (
+   ).
+   - Dataset includes Environmental, Social, and Governance parameters.
+
+2. Data Storage
+   - Dataset stored in CSV format.
+   - Imported into backend server.
+   - Stored in relational database (PostgreSQL).
+
+3. Data Preprocessing
+   - Handle missing values.
+   - Normalize numerical features.
+   - Encode categorical variables.
+   - Split dataset into training and testing sets.
+
+4. Machine Learning Processing
+   - Train model (Random Forest / XGBoost).
+   - Predict ESG score.
+   - Perform anomaly detection using Isolation Forest.
+   - Evaluate model performance (R2 Score / Accuracy).
+
+5. Backend API Layer
+   - REST API created using Flask/FastAPI.
+   - Endpoints:
+       /predict
+       /get-esg-data
+       /get-anomalies
+
+6. Frontend Dashboard
+   - Fetch data from backend API.
+   - Display:
+        - ESG Score
+        - Environmental Trends
+        - Social Indicators
+        - Governance Metrics
+        - Alerts for abnormal ESG behavior
+   - Use charts and graphs for visualization.
+
+7. Monitoring and Reporting
+   - Generate ESG summary report.
+   - Display sustainability performance level.
+   - Provide decision-support insights.
+
+8. System Output
+   - Predicted ESG Score.
+   - Performance Category (Good / Moderate / Poor).
+   - Sustainability Risk Alerts.
