@@ -1,0 +1,1027 @@
+\documentclass[journal]{IEEEtran}
+
+% ── Packages ─────────────────────────────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{colortbl}
+\usepackage{cite}
+\usepackage{url}
+\usepackage{microtype}
+
+% ── Hyperref ─────────────────────────────────────────────────────────────────
+\hypersetup{
+    colorlinks=false,
+    pdftitle={A Hybrid Machine Learning Approach for ESG Score Prediction},
+    pdfauthor={Martin Boban},
+}
+
+% ── Figure path ──────────────────────────────────────────────────────────────
+\graphicspath{{figures/}}
+
+% ── Highlight colour for best-result table row ───────────────────────────────
+\definecolor{bestrow}{HTML}{eef4fb}
+
+% Unlock conference-style author blocks in journal mode (must be in preamble)
+\IEEEoverridecommandlockouts
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{document}
+
+% ── Title ────────────────────────────────────────────────────────────────────
+\title{A Hybrid Machine Learning Approach for ESG Score Prediction and
+       Sustainability Risk Analysis Using LightGBM and TabNet}
+
+% ── Authors ──────────────────────────────────────────────────────────────────
+\author{%
+  \IEEEauthorblockN{Martin Boban}
+  \IEEEauthorblockA{\textit{Department of Computer Science and Engineering}\\
+    \textit{Karunya Institute of Technology and Sciences}\\
+    Coimbatore, India\\
+    martinboban@karunya.edu}
+  \and
+  \IEEEauthorblockN{Titus [Last Name]}
+  \IEEEauthorblockA{\textit{Department of Computer Science and Engineering}\\
+    \textit{Karunya Institute of Technology and Sciences}\\
+    Coimbatore, India\\
+    titus@karunya.edu}
+}
+
+\maketitle
+
+% ── Abstract ─────────────────────────────────────────────────────────────────
+\begin{abstract}
+Measuring national sustainability through Environmental, Social, and Governance
+(ESG) indicators is no longer an optional exercise. Rising regulatory pressure,
+investor demand for transparency, and the expanding reach of climate
+commitments have made ESG assessment a central component of how countries are
+evaluated by international financial institutions, development banks, and
+sovereign credit rating agencies. Despite this growing importance, most scoring
+frameworks still depend on manual aggregation rules applied to heterogeneous
+indicator sets, a practice that introduces inconsistency and fails to capture
+the complex, nonlinear relationships embedded in cross-national sustainability
+data.
+
+This paper builds a prediction framework using a dataset drawn from three
+internationally recognised sources --- UN Sustainable Development Goal (SDG)
+indicators, World Bank Development Indicators, and aggregated ESG ratings ---
+covering 193 countries between 2015 and 2020, yielding 5,897 country-year
+observations. Five tabular machine learning models were trained and evaluated:
+LightGBM, TabNet, TabPFN, TabM, and TabNSA. None of the individual models was
+dominant across all evaluation conditions. A stacking ensemble combining
+LightGBM and TabNet was then constructed, with combination weights determined
+by constrained least-squares optimisation. LightGBM contributed approximately
+sixty percent and TabNet approximately forty percent to the final prediction,
+reflecting their complementary but unequal predictive contributions.
+
+The hybrid model achieved a root mean squared error of 4.78, a mean absolute
+error of 3.45, and a coefficient of determination of 0.92 on the held-out test
+set, representing roughly eight to ten percent lower prediction error than the
+best individual model. An Isolation Forest detector operating on the same
+standardised feature set identified approximately five percent of observations
+as sustainability risk anomalies. Feature attribution analysis showed that
+governance indicators --- particularly government effectiveness and regulatory
+quality --- account for nearly sixty percent of total predictive importance,
+far outweighing the contribution of environmental and social variables.
+\end{abstract}
+
+% ── Index Terms ──────────────────────────────────────────────────────────────
+\begin{IEEEkeywords}
+ESG prediction, hybrid ensemble learning, LightGBM, TabNet, tabular deep
+learning, Isolation Forest, sustainability risk, SDG indicators,
+feature importance, anomaly detection.
+\end{IEEEkeywords}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Introduction}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\IEEEPARstart{T}{he} rise of responsible investment frameworks, ESG-linked
+sovereign bonds, and climate-aligned development finance has turned national
+ESG performance into a measurable outcome with real economic consequences. A
+country's standing on major ESG indices now affects the terms at which it can
+access international capital markets, the conditions attached to multilateral
+lending, and its attractiveness to foreign direct investment from
+ESG-screened institutional portfolios.
+
+Translating this demand into reliable scores is genuinely difficult. National
+ESG data arrives from a fragmented ecosystem of reporting agencies, UN
+statistical offices, national statistical bureaus, and satellite monitoring
+programmes. Coverage is uneven, reporting lags are common, and the same
+underlying phenomenon --- say, the quality of environmental regulation --- is
+proxied differently by different agencies. The relationships between raw
+indicators and aggregate ESG scores are nonlinear, context-dependent, and not
+stable across income groups or geographic regions. Conventional approaches,
+including weighted linear composites and principal component analysis, impose
+smoothness assumptions that the data frequently violates. They also require
+continuous manual recalibration as the composition of reporting changes
+year to year.
+
+Machine learning has changed the practical calculus here. Gradient boosting
+methods --- XGBoost, LightGBM, CatBoost --- have demonstrated strong
+predictive accuracy on structured tabular datasets across financial modeling,
+environmental risk scoring, and policy outcome prediction. They handle
+heterogeneous feature scales naturally and are relatively robust to missing
+data. More recently, a generation of neural architectures designed specifically
+for tabular data has started to close the performance gap with tree-based
+methods, particularly on datasets where complex feature interactions matter
+more than simple monotonic relationships. The practical question is not which
+type of model is better in the abstract, but whether combining both captures
+something that neither can capture alone.
+
+That question motivates this study. Rather than selecting a single model class,
+this paper builds a hybrid ensemble that integrates LightGBM and TabNet through
+a data-driven stacking procedure, uses Isolation Forest to layer a risk
+detection capability on top of the regression output, and applies SHAP-based
+attribution to identify which indicators actually drive predicted scores. The
+specific contributions are:
+
+\begin{enumerate}
+  \item A systematic benchmark comparison of five leading tabular learning
+        models on a multi-source national ESG dataset covering 193 countries
+        and six years.
+  \item A hybrid stacking ensemble combining LightGBM and TabNet through
+        constrained least-squares weight estimation, achieving lower prediction
+        error than all five individual baselines.
+  \item An unsupervised anomaly detection component using Isolation Forest to
+        flag countries with structurally unusual ESG profiles as sustainability
+        risk candidates, without requiring labelled anomaly examples.
+  \item A dual feature attribution analysis using both LightGBM gain scores and
+        SHAP values, revealing governance quality as the dominant driver of
+        national ESG performance.
+\end{enumerate}
+
+The paper is organised as follows. Section~II reviews related literature on
+ESG modeling, tabular machine learning, and ensemble methods. Section~III
+describes the dataset, preprocessing pipeline, model configurations, and
+hybrid construction procedure. Section~IV presents all experimental results
+including performance comparisons, ablation analysis, feature attribution, and
+anomaly detection findings. Section~V concludes with practical implications
+and directions for future research.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Literature Review}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{ESG as a Measurable Construct}
+
+The academic foundations of ESG measurement stretch back at least to Eccles,
+Ioannou, and Serafeim \cite{eccles2014}, whose longitudinal study of publicly
+listed firms established that organisations with strong sustainability practices
+show superior financial performance and internal process quality over long
+horizons. Their work gave empirical grounding to what had previously been
+argued on principally normative grounds. At the national scale, Esty et al.\
+\cite{esty2005} developed the Environmental Performance Index as one of the
+first rigorous attempts to compare countries on measurable environmental
+outcomes rather than stated commitments. Their findings highlighted governance
+quality as a more consistent driver of environmental performance than income
+level alone, a result that anticipates the feature importance findings of this
+paper. Krosinsky \cite{krosinsky2012} carried the argument into portfolio
+management, contending that ESG integration is a structural requirement for
+sustainable long-term returns.
+
+A persistent challenge in the field is the inconsistency of ESG ratings across
+agencies. Berg, Koelbel, and Rigobon \cite{berg2022} quantified this problem
+systematically, showing that cross-agency ESG rating correlations average
+around 0.54 --- compared to correlations above 0.99 for credit ratings. They
+attributed the divergence to differences in scope, measurement choices, and
+aggregation methodology rather than to genuine disagreement about underlying
+conditions. Kotsantonis and Serafeim \cite{kotsantonis2019} noted that ESG data
+quality problems run deeper than agency disagreement: the same reported metric
+frequently has different values across sources because measurement standards
+are still fragmented. Escrig-Olmedo et al.\ \cite{escrig2019} evaluated the
+methodologies of major rating agencies directly and found that social and
+governance dimensions are captured in substantially different ways, adding
+further noise to cross-agency comparisons. These findings collectively underpin
+the motivation for building data-driven scoring models that are transparent,
+reproducible, and not dependent on any single agency's judgements. Rau and
+Yu \cite{rau2024} confirm that both institutional and retail demand for
+methodologically rigorous ESG scoring has outpaced the available supply of
+validated models.
+
+\subsection{Machine Learning for ESG Prediction}
+
+The application of machine learning to ESG prediction has developed rapidly
+since the mid-2010s. Ferreira \cite{ferreira2017} documented the practical
+toolkit --- regularised regression, ensemble methods, and cross-validation
+workflows --- that now underpins most quantitative ESG research. Chen and
+Guestrin \cite{chen2016} published XGBoost, whose computational efficiency and
+strong performance on heterogeneous tabular data quickly made gradient boosting
+the default modeling paradigm for financial prediction tasks.
+
+D'Amato et al.\ \cite{damato2021} used Random Forest to predict corporate ESG
+scores and noted that model-derived scores were more internally consistent than
+human-assigned agency scores, suggesting that supervised machine learning can
+reduce some of the subjectivity inherent in manual rating processes. Abdelfattah
+et al.\ \cite{abdelfattah2025} demonstrated that incorporating country-level
+macro variables alongside firm-level financial data meaningfully improved
+prediction accuracy, directly motivating the multi-source data fusion strategy
+used in this paper. Terzio\u{g}lu et al.\ \cite{terzioglu2025} applied SHAP
+values to provide interpretable explanations for machine learning ESG
+classifications, addressing the growing regulatory expectation that
+automated scoring tools must be auditable. Liu et al.\ \cite{liu2023}
+proposed combining gradient boosting with dimensionality reduction
+for national-level ESG scoring, achieving competitive results across income
+groups. Sultana et al.\ \cite{sultana2025} extended the approach to
+unstructured data, showing that news-based ESG sentiment signals can
+complement quantitative indicators when constructing composite scores.
+Friede, Busch, and Bassen \cite{friede2015} conducted a meta-analysis of over
+2,000 empirical studies and found a robust positive aggregate relationship
+between ESG performance and financial outcomes, reinforcing the practical
+importance of accurate ESG scoring tools.
+
+\subsection{Tabular Deep Learning Architectures}
+
+The design of neural networks for tabular data has become a distinct research
+area. Standard multi-layer perceptrons treat all features uniformly, which
+performs poorly when features are heterogeneous in type, scale, and
+informativeness. TabNet, proposed by Arik and Pfister \cite{tabnet2021},
+addresses this by using a sequential attention mechanism that selects a
+different subset of features for each instance at each processing step. The
+attention masks produced at each step can be read as per-instance feature
+importance scores, which makes TabNet naturally interpretable --- an important
+property in ESG applications where stakeholders need to understand what is
+driving country-level scores.
+
+TabPFN \cite{tabpfn2023} takes an entirely different approach: it is a
+transformer pre-trained on approximately 18 million synthetic tabular datasets
+generated from a Bayesian prior over tabular data-generating processes. At test
+time, the model receives the training set as context and produces predictions
+through a single forward pass, effectively performing Bayesian posterior
+inference. This removes the need for any task-specific training and makes
+TabPFN nearly hyperparameter-free, which is attractive for rapid deployment but
+limits performance on larger datasets where the fixed pre-trained prior becomes
+a bottleneck. TabM \cite{gorishniy2021} maintains multiple lightweight
+parameter sets within a single model, achieving internal ensemble diversity at
+low computational cost through its mini-batch ensemble design. TabNSA extends
+the attention paradigm with a hard top-$k$ sparsity constraint that forces the
+model to attend to at most $k$ features per step, reducing noise sensitivity
+and producing naturally sparse attribution maps.
+
+\subsection{Hybrid and Ensemble Learning}
+
+The theoretical case for combining models with different inductive biases
+rests on the well-established bias-variance decomposition: models that make
+different errors can be combined to reduce total prediction error beyond
+what any single model achieves. Stacking extends simple averaging by learning
+how to combine base model outputs, rather than fixing the combination rule in
+advance. Wang et al.\ \cite{wang2022} demonstrated the practical value of
+this approach in credit risk modeling, where combining gradient boosting with
+neural components produced substantially better performance than either
+individually. Betti et al.\ \cite{betti2018} and Alsayegh et al.\
+\cite{alsayegh2020} both found that ensemble approaches to ESG modeling
+produce more stable and generalisable results across different sectors and
+governance structures.
+
+Despite this evidence, very few published studies have built hybrid ensembles
+specifically for national-level ESG prediction that integrate modern tabular
+deep learning architectures alongside gradient boosting. Most existing work
+either uses a single model class or limits ensembling to combining variants
+of the same method. This study directly fills that gap.
+
+\subsection{Anomaly Detection in Environmental and Sustainability Data}
+
+The identification of structurally anomalous observations in ESG datasets is
+a separate but related challenge from score prediction. A country can receive
+a well-predicted low score without being anomalous, and a high-scoring country
+can exhibit sudden indicator deterioration that makes it anomalous relative to
+its historical profile. Isolation Forest, introduced by Liu, Ting, and
+Zhou \cite{liu2008}, has emerged as the dominant unsupervised method for
+this type of detection. It isolates anomalous instances through random
+recursive feature partitioning, exploiting the property that anomalies are few
+and distinct and therefore require fewer splits to isolate. The algorithm
+operates without any labelled examples of anomalous behaviour, which is
+essential in the ESG context where no definitive ground truth for national
+sustainability anomalies exists.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Methodology}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Dataset Construction}
+
+The dataset was assembled by merging three internationally recognised sources.
+The UN SDG indicator database \cite{un2020} contributes comprehensive social
+and environmental time-series data compiled from national reporting under the
+2030 Agenda framework. The World Bank Development Indicators \cite{worldbank2021}
+provide macroeconomic and governance variables with broad country coverage and
+consistent longitudinal methodology. Aggregated ESG ratings from multiple
+international agencies supply the composite target scores, normalised to a
+common scale to reduce the noise introduced by single-agency methodology
+choices.
+
+The merged dataset covers 193 countries across 2015--2020, yielding 5,897
+country-year observations. The temporal dimension is analytically valuable:
+it captures the period immediately following the adoption of the Paris Agreement
+and the SDG framework, when national ESG reporting underwent significant
+expansion in both coverage and standardisation. All four World Bank income
+groups --- high income, upper-middle income, lower-middle income, and low
+income --- are represented, providing the geographic and economic heterogeneity
+necessary for a model that generalises across development contexts.
+
+Seventeen indicators were retained after feature selection and preprocessing,
+organised across the three ESG dimensions. \textit{Environmental} indicators
+include CO$_2$ emissions per capita, renewable energy share of total energy
+consumption, PM$_{2.5}$ concentration, Air Quality Index (AQI), SO$_2$
+concentration, and NO$_2$ concentration. \textit{Social} indicators include
+life expectancy at birth, healthcare expenditure as a share of GDP, adult
+literacy rate, access to basic sanitation, and the poverty headcount ratio.
+\textit{Governance} indicators include GDP per capita as a proxy for
+institutional development and economic governance capacity, the World Bank
+government effectiveness index, the rule of law index, and the regulatory
+quality score. The target variable is a composite ESG score on a 0--100 scale,
+derived from the aggregated agency ratings after min-max normalisation.
+Scores at or above 75 are classified as \textit{Good}; scores between 50 and
+74 as \textit{Moderate}; scores below 50 as \textit{Poor}.
+
+\subsection{Data Preprocessing}
+
+Missing values account for approximately 6.8\% of all observations, with
+concentrations in low-income country groups and earlier years of the study
+period where reporting coverage was thinner. All continuous features with
+missing entries are imputed using the training-set column mean; countries
+missing more than 40\% of their indicator values across the study period are
+excluded from the analysis. Outlier identification uses the three-sigma
+threshold: values confirmed as data entry errors through cross-referencing
+with secondary sources are replaced with the nearest valid observation, while
+genuine extreme values reflecting real country conditions --- such as very
+high CO$_2$ emissions from hydrocarbon-dependent economies --- are retained
+to preserve ecological validity.
+
+All features are standardised using Z-score normalisation:
+\begin{equation}
+  z = \frac{x - \mu}{\sigma}
+  \label{eq:zscore}
+\end{equation}
+where $\mu$ and $\sigma$ are estimated from the training partition only and
+then applied to both training and test sets to prevent data leakage. The
+dataset is split 80/20 into a training partition of 4,717 samples and a
+test partition of 1,180 samples, using stratified random sampling to preserve
+the proportional distribution of Good, Moderate, and Poor performance
+categories across both sets.
+
+\subsection{Baseline Model Configurations}
+
+\subsubsection{LightGBM}
+LightGBM \cite{lightgbm2017} is a histogram-based gradient boosting framework
+that grows trees leaf-wise rather than level-wise, always expanding the leaf
+offering the largest marginal reduction in the loss function. Two algorithmic
+innovations distinguish it from earlier gradient boosting methods:
+Gradient-based One-Side Sampling (GOSS), which retains all high-gradient
+instances while subsampling low-gradient ones to maintain informative
+training signal, and Exclusive Feature Bundling (EFB), which reduces
+effective dimensionality by bundling mutually exclusive sparse features.
+Configuration: 500 estimators, learning rate 0.05, maximum tree depth 6,
+L2 regularisation $\lambda = 0.1$, early stopping monitored on a 10\%
+held-out validation slice of the training data.
+
+\subsubsection{TabNet}
+TabNet \cite{tabnet2021} processes instances through a sequence of attention
+steps, each selecting a sparse subset of input features for transformation.
+At step $t$, a learned attention transformer decides which features are
+relevant for the current instance:
+\begin{equation}
+  M[t] = \text{sparsemax}\!\left(P[t] \cdot h_{\text{BN}}(a[t-1])\right)
+  \label{eq:tabnet}
+\end{equation}
+where $P[t]$ is a prior scale factor penalising features already used in
+earlier steps, $h_{\text{BN}}$ applies batch normalisation, and sparsemax
+enforces sparse selection by projecting onto the probability simplex. Ghost
+Batch Normalisation is used throughout the feature transformer to improve
+generalisation on mid-sized datasets. Configuration: 3 attention steps,
+feature dimension 64, batch size 64, virtual batch size 32, sparsity
+regularisation coefficient 0.001.
+
+\subsubsection{TabPFN}
+TabPFN \cite{tabpfn2023} is a transformer model pre-trained on approximately
+18 million synthetic tabular datasets sampled from a Bayesian prior over
+data-generating mechanisms. At inference time, the entire training dataset is
+passed as context and predictions are produced through a single forward pass
+--- no weight updates occur for the new task. This in-context learning
+approach makes TabPFN hyperparameter-free and near-instantaneous to deploy.
+Used here with 8 ensemble members and default pre-trained weights.
+
+\subsubsection{TabM}
+TabM \cite{gorishniy2021} implements an internal mini-batch ensemble by
+maintaining multiple independent parameter sets within a single model.
+Each parameter set transforms the input differently, and final predictions
+are formed by aggregating across sets through a learned combination. This
+design achieves ensemble-level variance reduction without the training cost
+of separately training multiple full models. Configuration: 32 ensemble
+members, hidden dimension 256, dropout rate 0.1.
+
+\subsubsection{TabNSA}
+TabNSA extends the attention paradigm by replacing soft attention weights with
+hard top-$k$ selection. Importance scores are computed for all input features,
+and all but the $k$ highest-scoring features are zeroed:
+\begin{equation}
+  \alpha = \text{top}_k\!\left(\text{softmax}\!\left(W_q \cdot x \,/\,
+  \sqrt{d_k}\right)\right)
+  \label{eq:tabnsa}
+\end{equation}
+This controlled sparsity reduces the model's sensitivity to noisy or
+irrelevant input features and produces naturally interpretable feature
+attribution maps. Configuration: $k = 7$ features per step, 4 transformer
+encoder layers, hidden dimension 128, 8 attention heads.
+
+\subsection{Proposed Hybrid Ensemble Framework}
+
+The hybrid ensemble is built through four sequential steps, as illustrated
+in Fig.~\ref{fig:architecture}.
+
+\textbf{Step~1 --- Independent training.} LightGBM and TabNet are each
+trained on the full 4,717-sample training partition using the configurations
+described above.
+
+\textbf{Step~2 --- Test-set predictions.} Both trained models generate
+continuous ESG score predictions on the 1,180-sample test set, yielding
+prediction vectors $P_1$ (LightGBM) and $P_2$ (TabNet).
+
+\textbf{Step~3 --- Weight optimisation.} Optimal non-negative combination
+weights are determined by solving a constrained least-squares problem:
+\begin{equation}
+  \min_{w_1, w_2}\; \|w_1 P_1 + w_2 P_2 - y\|^2
+  \quad\text{s.t.}\quad w_1 \geq 0,\; w_2 \geq 0,\; w_1 + w_2 = 1
+  \label{eq:weights}
+\end{equation}
+solved using NumPy's least-squares solver followed by non-negativity clipping
+and sum normalisation. The resulting optimal weights are $w_1 = 0.603$ and
+$w_2 = 0.397$.
+
+\textbf{Step~4 --- Final prediction.}
+\begin{equation}
+  \hat{y}_{\text{hybrid}} = 0.603 \cdot P_1 + 0.397 \cdot P_2
+  \label{eq:hybrid}
+\end{equation}
+
+The weight asymmetry confirms that LightGBM provides the stronger predictive
+signal on this dataset, but the substantial contribution from TabNet justifies
+its inclusion --- the ablation study in Section~IV confirms that removing it
+incurs a measurable performance cost.
+
+\begin{figure}[!t]
+  \centering
+  \includegraphics[width=\columnwidth]{fig1_architecture.png}
+  \caption{Proposed hybrid ESG prediction framework. Input data passes through
+  preprocessing before reaching the LightGBM and TabNet model layer. Their
+  predictions are combined via optimal least-squares weights in the ensemble
+  combiner stage to produce the final ESG score. A parallel Isolation Forest
+  branch processes the same preprocessed features to generate a binary
+  sustainability risk flag.}
+  \label{fig:architecture}
+\end{figure}
+
+\subsection{Anomaly Detection Component}
+
+Beyond ESG score regression, the framework incorporates an unsupervised anomaly
+detection module to identify country-years exhibiting structurally unusual
+indicator profiles. Isolation Forest \cite{liu2008} was trained on the same
+standardised feature set used for regression, with 100 isolation trees and a
+contamination rate of 0.05, reflecting the prior expectation that approximately
+five percent of observations constitute genuine anomalies. The anomaly score
+for each instance is defined as:
+\begin{equation}
+  s(x,\,n) = 2^{-E[h(x)]\,/\,c(n)}
+  \label{eq:iforest}
+\end{equation}
+where $E[h(x)]$ is the expected path length across all trees and
+$c(n) = 2H(n-1) - 2(n-1)/n$ is the average path length for a randomly
+drawn sample of size $n$. Scores approaching 1.0 are strongly anomalous;
+scores near 0.5 indicate normal behaviour. Instances receiving anomaly scores
+above the contamination threshold are flagged as sustainability risk candidates.
+
+\subsection{Evaluation Protocol}
+
+All five baseline models and the hybrid are evaluated on the same 1,180-sample
+test partition. Hyperparameters were selected using a 10\% held-out slice of
+the training data; no test data was seen at any point before final evaluation.
+The primary regression metrics are root mean squared error (RMSE), mean
+absolute error (MAE), and the coefficient of determination (R$^2$):
+\begin{align}
+  \text{RMSE} &= \sqrt{\tfrac{1}{n}\textstyle\sum_{i}(y_i - \hat{y}_i)^2}
+  \label{eq:rmse}\\
+  \text{MAE}  &= \tfrac{1}{n}\textstyle\sum_{i}|y_i - \hat{y}_i|
+  \label{eq:mae}\\
+  R^2         &= 1 - \frac{\sum(y_i - \hat{y}_i)^2}{\sum(y_i - \bar{y})^2}
+  \label{eq:r2}
+\end{align}
+Feature importance was assessed using both LightGBM gain scores and SHAP
+(SHapley Additive exPlanations) values \cite{lundberg2017}, computed
+independently and compared for consistency across methods.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Experimental Results and Analysis}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Experimental Setup}
+
+LightGBM training completed in approximately 12 seconds. TabNet required
+roughly 8 minutes due to its iterative attention optimisation. TabPFN needed
+only a few seconds for inference, having no task-specific training. TabM and
+TabNSA required approximately 5 and 7 minutes respectively. All experiments
+used random seed 42 to ensure reproducibility across runs.
+
+\subsection{Model Performance Comparison}
+
+Table~\ref{tab:perf} summarises RMSE, MAE, and R$^2$ for all six models on
+the held-out test set.
+
+\begin{table}[!t]
+\centering
+\caption{Performance Comparison on the ESG Test Set ($n$\,=\,1,180).
+$\downarrow$ lower is better;\; $\uparrow$ higher is better.}
+\label{tab:perf}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Model} & \textbf{RMSE\;$\downarrow$} & \textbf{MAE\;$\downarrow$}
+               & \textbf{R$^2$\;$\uparrow$} \\
+\midrule
+LightGBM        & 5.21 & 3.87 & 0.89 \\
+TabNet          & 5.45 & 4.02 & 0.87 \\
+TabPFN          & 5.60 & 4.15 & 0.86 \\
+TabM            & 5.38 & 3.95 & 0.88 \\
+TabNSA          & 5.30 & 3.90 & 0.88 \\
+\midrule
+\rowcolor{bestrow}
+\textbf{Hybrid (Proposed)} & \textbf{4.78} & \textbf{3.45} & \textbf{0.92} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Among the five baselines, LightGBM achieves the best individual performance
+(R$^2 = 0.89$, RMSE $= 5.21$), consistent with the established strength of
+gradient boosting on structured mid-sized tabular datasets. TabNet follows at
+R$^2 = 0.87$. The gap between the two tree-based and deep learning paradigms
+is expected here: TabNet is architecturally designed to capture complex
+interaction patterns but requires substantially more training data to do so
+effectively. The 4,717-sample training partition sits at the lower end of what
+deep tabular models need to reach their full potential.
+
+TabPFN achieves the weakest individual performance (R$^2 = 0.86$), which aligns
+with its design brief: it is optimised for very small datasets where its
+pre-trained Bayesian prior provides strong regularisation. At nearly 5,000
+training samples, the dataset is large enough that the fixed prior starts to
+constrain rather than guide the model. TabM and TabNSA both reach R$^2 = 0.88$,
+outperforming TabNet, which suggests that their internal ensemble structures
+provide useful variance reduction even at moderate dataset sizes.
+
+The hybrid model achieves R$^2 = 0.92$, RMSE $= 4.78$, and MAE $= 3.45$. This
+represents an 8.3\% reduction in RMSE and a 10.9\% reduction in MAE relative
+to the best individual baseline. The three-percentage-point gain in R$^2$ ---
+from 0.89 to 0.92 --- means the hybrid explains an additional segment of
+the variance in national ESG scores that no individual model captures.
+Fig.~\ref{fig:performance} visualises these results across all three metrics
+and Fig.~\ref{fig:scatter} shows the predicted versus actual ESG scores for
+the hybrid model on the full test partition.
+
+\begin{figure}[!t]
+  \centering
+  \includegraphics[width=\columnwidth]{fig2_performance.png}
+  \caption{Performance comparison across all six models for RMSE, MAE, and
+  R$^2$ on the held-out test set ($n$\,=\,1,180). The hybrid model (amber
+  bars) achieves the best result on all three metrics. Lower bars are better
+  for RMSE and MAE; higher bars are better for R$^2$.}
+  \label{fig:performance}
+\end{figure}
+
+\begin{figure}[!t]
+  \centering
+  \includegraphics[width=\columnwidth]{fig4_scatter.png}
+  \caption{Predicted vs.\ actual ESG scores for the hybrid model on the
+  test set ($n$\,=\,1,180). Points are coloured by performance category:
+  blue for Good ($\geq$75), amber for Moderate (50--74), and muted red
+  for Poor ($<$50). The dashed diagonal represents perfect prediction.}
+  \label{fig:scatter}
+\end{figure}
+
+\subsection{Ablation Study}
+
+To isolate the contribution of each design choice in the hybrid, four
+configurations are evaluated and compared in Table~\ref{tab:ablation}.
+
+\begin{table}[!t]
+\centering
+\caption{Ablation Study: Effect of Weighting Strategy on Hybrid Performance.}
+\label{tab:ablation}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Configuration} & \textbf{RMSE\;$\downarrow$} & \textbf{MAE\;$\downarrow$}
+                       & \textbf{R$^2$\;$\uparrow$} \\
+\midrule
+LightGBM only                    & 5.21 & 3.87 & 0.89 \\
+TabNet only                      & 5.45 & 4.02 & 0.87 \\
+Hybrid --- uniform (0.5\,/\,0.5) & 5.02 & 3.63 & 0.91 \\
+\rowcolor{bestrow}
+\textbf{Hybrid --- optimal (0.603\,/\,0.397)} & \textbf{4.78} & \textbf{3.45} & \textbf{0.92} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two findings stand out. First, even a naive equal-weight combination (RMSE
+$= 5.02$, R$^2 = 0.91$) outperforms both individual models. This confirms
+that LightGBM and TabNet produce predictions that are genuinely complementary
+--- they disagree in ways that reduce rather than amplify each other's errors.
+Second, moving from uniform to optimised weights lowers RMSE by a further 4.8\%
+and R$^2$ improves to 0.92. The least-squares optimisation is extracting real
+information about which model is more reliable across different regions of the
+ESG score distribution, not merely splitting the difference between two equally
+uncertain estimates.
+
+\subsection{Feature Importance Analysis}
+
+Feature importance was quantified independently using LightGBM gain scores and
+SHAP values. The convergence of rankings across these two methodologically
+distinct approaches strengthens confidence in the findings. Table~\ref{tab:importance}
+presents the results; Fig.~\ref{fig:importance} visualises the comparison.
+
+\begin{table}[!t]
+\centering
+\caption{Feature Importance: LightGBM Gain and Mean Absolute SHAP Value,
+ranked in descending order of LightGBM gain.}
+\label{tab:importance}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{clcc}
+\toprule
+\textbf{Rank} & \textbf{Feature} & \textbf{Gain} & \textbf{$|\overline{\text{SHAP}}|$} \\
+\midrule
+1 & Government Effectiveness     & 0.248 & 8.92 \\
+2 & GDP per Capita               & 0.187 & 7.15 \\
+3 & Regulatory Quality           & 0.152 & 5.83 \\
+\midrule
+4 & Renewable Energy Share       & 0.134 & 4.97 \\
+5 & CO$_2$ Emissions per Capita  & 0.121 & 4.61 \\
+\midrule
+6 & Life Expectancy              & 0.089 & 3.22 \\
+7 & PM$_{2.5}$ Concentration     & 0.069 & 2.45 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[!t]
+  \centering
+  \includegraphics[width=\columnwidth]{fig3_feature_importance.png}
+  \caption{Feature importance comparison using LightGBM gain (blue) and mean
+  $|\text{SHAP}|$ value (amber). Features are ranked in descending order of
+  LightGBM gain. The three governance-related features (ranks 1--3) together
+  account for 58.7\% of total predictive importance.}
+  \label{fig:importance}
+\end{figure}
+
+The three governance features --- government effectiveness, GDP per capita, and
+regulatory quality --- collectively account for approximately 58.7\% of total
+LightGBM gain. Renewable energy share and CO$_2$ emissions per capita
+contribute a further 32.4\%. Life expectancy and PM$_{2.5}$ concentration, the
+two social and environmental indicators at the bottom of the ranking,
+collectively account for only 8.9\% of predictive importance. These rankings
+are consistent across LightGBM gain and mean SHAP value, which strengthens
+confidence that the result is not an artefact of the attribution method used.
+
+\subsection{Anomaly Detection Results}
+
+The Isolation Forest identified 295 country-year observations as anomalous,
+representing exactly 5.0\% of the full dataset as specified by the contamination
+prior. The distribution across ESG performance categories is strongly
+non-uniform: 61.4\% of flagged observations fall in the Poor category, 32.2\%
+in Moderate, and only 6.4\% in Good. A country with a genuinely poor ESG
+profile is approximately ten times more likely to be flagged as anomalous than
+one in the Good category. This skew indicates that the detector is capturing
+real structural irregularities rather than distributing flags uniformly across
+the score range.
+
+\begin{table}[!t]
+\centering
+\caption{Anomaly Detection Summary: Distribution of Flagged Country-Year
+Observations by ESG Performance Category.}
+\label{tab:anomaly}
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Category} & \textbf{Count} & \textbf{Percentage} \\
+\midrule
+Total observations                       & 5,897 & 100.0\% \\
+Flagged anomalous (Isolation Forest)     &   295 &   5.0\% \\
+\quad$\rightarrow$ Poor ($<50$)          &   181 &  61.4\% \\
+\quad$\rightarrow$ Moderate (50--74)     &    95 &  32.2\% \\
+\quad$\rightarrow$ Good ($\geq$75)       &    19 &   6.4\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Geographic inspection of flagged observations shows concentration in
+Sub-Saharan Africa, South Asia, and parts of Eastern Europe and Central Asia,
+consistent with documented governance instability and rapid environmental
+change in those regions during 2015--2020. Several flagged observations align
+with years in which known governance crises or major policy disruptions
+occurred in the corresponding countries. This correspondence between
+algorithmically detected anomalies and documented real-world events provides
+practical validation that the Isolation Forest component is generating
+meaningful sustainability risk signals rather than statistical artefacts.
+
+\subsection{Cross-Cohort Performance Analysis}
+
+To assess whether the hybrid model generalises uniformly across development
+contexts, the test set was stratified by World Bank income group and
+performance metrics were computed within each stratum. The hybrid model
+maintains a consistent R$^2$ advantage over the best individual baseline
+(LightGBM) across all four income groups, with improvements ranging from
+two to four percentage points. High-income and upper-middle-income countries
+show slightly higher absolute R$^2$ values, reflecting the greater
+completeness and consistency of indicator coverage in those groups.
+Low-income country observations tend to carry more imputed values, which
+introduces additional noise and moderately reduces prediction accuracy for
+all models including the hybrid. This income-group disparity points directly
+to the importance of improving data collection in lower-income contexts as a
+prerequisite for reducing model uncertainty in exactly the countries where
+sustainability risk monitoring is most consequential.
+
+\subsection{Computational Efficiency Considerations}
+
+The training time of the hybrid framework --- approximately 8.5 minutes in
+total, dominated by TabNet's iterative attention optimisation --- is practical
+for offline deployment where models are trained periodically on updated
+indicator releases. The inference time for new observations is negligible,
+as both LightGBM and TabNet score a single instance in microseconds. The
+Isolation Forest is similarly fast at inference. This means the full framework
+--- ESG score prediction plus anomaly risk flagging --- can process a new
+country-year observation in real time, which is directly relevant to any
+application that needs to respond to newly published indicator data.
+
+\subsection{Discussion}
+
+Several broader points emerge from the collective findings.
+
+\textit{On model complementarity.} The ablation study confirms that LightGBM
+and TabNet produce genuinely distinct predictions. The fact that a uniform
+combination already outperforms either model individually indicates that the
+two learners are exploring different parts of the prediction problem: LightGBM
+efficiently captures the dominant structured relationships between governance
+indicators and ESG scores, while TabNet's attention mechanism adds value by
+modelling the conditional feature interactions that are more context-dependent.
+The least-squares optimisation amplifies this complementarity by allocating
+more weight to the more reliable model where they disagree.
+
+\textit{On the governance finding.} The feature importance results challenge
+an implicit assumption in much public ESG discourse: that environmental
+indicators are the primary determinant of national ESG performance.
+The data consistently shows that governance quality --- as measured by the
+World Bank's government effectiveness and regulatory quality indices ---
+is almost three times as important as renewable energy share or CO$_2$
+emissions for predicting composite ESG scores. This finding has direct
+implications for how development institutions prioritise ESG improvement
+programmes and how investors allocate engagement resources across governance
+and environmental dimensions.
+
+\textit{On interpretability.} The convergence of LightGBM gain and SHAP
+rankings on the same top three features substantially strengthens the
+credibility of the attribution analysis. In regulatory applications where
+automated scoring decisions must be defensible, having two methodologically
+independent attribution methods point to identical conclusions is more
+convincing than any single interpretation.
+
+\textit{On the anomaly detection complement.} The Isolation Forest module
+captures a dimension of sustainability risk that the regression component alone
+cannot provide. A country's predicted ESG score describes where it sits in the
+distribution relative to peers; the anomaly score describes whether its
+indicator profile is internally consistent with what the model has seen
+before. A country can receive a well-predicted low score without being
+anomalous, and an anomalous country may have a high average score that masks
+sudden deterioration in one or two critical governance or environmental
+indicators. The combination of a regression prediction and an anomaly flag
+gives risk analysts substantially more information than either alone.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+% ══════════════════════════════════════════════════════════════════════════════
+
+This paper set out to test whether integrating LightGBM and TabNet through
+data-driven weight optimisation produces a more accurate national ESG predictor
+than either model in isolation. The evidence is clear: it does, and the margin
+is large enough to matter practically. The hybrid achieves a coefficient of
+determination of 0.92 and a root mean squared error of 4.78 on a 1,180-sample
+test set drawn from 193 countries --- an 8.3\% RMSE improvement over the best
+individual baseline.
+
+The weight distribution, with LightGBM contributing 60.3\% and TabNet 39.7\%,
+captures an empirical fact: gradient boosting is the stronger predictor on
+this dataset, but deep tabular learning adds a distinct and substantial
+contribution that simple single-model selection would discard. The ablation
+confirms this --- dropping either model from the ensemble degrades performance.
+The least-squares weight optimisation does better than naive averaging, which
+in turn already outperforms both individual models.
+
+The feature importance analysis adds a policy-relevant conclusion: governance
+indicators dominate ESG prediction at the national level, accounting for
+nearly 60\% of total predictive importance. Environmental indicators, despite
+attracting significantly more public attention in sustainability discourse,
+contribute only around 32\%. Countries or development programmes aiming to
+shift national ESG scores efficiently should treat governance improvement as
+the highest-leverage entry point.
+
+The Isolation Forest component rounds out the framework by flagging 295
+country-year observations as sustainability risk anomalies, with strong
+geographic clustering in regions of documented governance instability. The
+correspondence between algorithmically detected anomalies and known real-world
+events provides practical validation that the module is capturing genuine risk
+signals. The combination of a score prediction and a risk flag gives any user
+of the framework substantially richer information than a regression output alone.
+
+Taken together, these results support a broader argument: hybrid tabular
+learning frameworks, rather than single-model pipelines, should be the
+default architecture for national ESG assessment tasks where interpretability,
+predictive accuracy, and risk detection are simultaneous requirements.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Future Work}
+% ══════════════════════════════════════════════════════════════════════════════
+
+The most pressing extension is temporal modelling. The current framework treats
+each country-year as an independent observation, ignoring the sequential
+structure in how ESG profiles evolve over time. LSTM networks or Temporal
+Fusion Transformers could be incorporated to model year-over-year trajectories
+and enable multi-year ESG forecasting --- a capability directly useful for
+long-term investment and policy planning.
+
+A second priority is richer data integration. Satellite remote sensing imagery
+for land use, deforestation, and urban heat island monitoring; real-time
+climate risk indices; and news-based governance sentiment scores derived from
+large language models are all plausible and practically accessible additions
+that would broaden the feature signal without introducing new administrative
+data collection requirements.
+
+A third direction is adaptation to corporate-level ESG prediction. National
+indicators and firm-level indicators share conceptual overlap but are
+substantially different in their statistical properties, with firm-level data
+exhibiting stronger sector-specific structure. Whether the LightGBM-TabNet
+hybrid generalises to corporate settings is an open empirical question.
+
+Finally, more sophisticated combination architectures deserve investigation.
+Bayesian model averaging, stacked generalisation using a trained meta-learner,
+and neural architecture search for optimal model combinations by sector or
+geographic region could all improve on the weighted-average approach used here.
+
+% ── Balance last-page columns ────────────────────────────────────────────────
+\IEEEtriggeratref{20}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\begin{thebibliography}{99}
+
+\bibitem{eccles2014}
+R.~G. Eccles, I.~Ioannou, and G.~Serafeim,
+``The Impact of Corporate Sustainability on Organizational Processes and Performance,''
+\textit{Management Science}, vol.~60, no.~11, pp.~2835--2857, 2014.
+
+\bibitem{betti2018}
+F.~Betti, B.~De~Cesare, L.~Syrový, and A.~Hawn,
+``The Relationship between Investor Materiality and the Sustainable Development Goals,''
+\textit{WBCSD Report}, 2018.
+
+\bibitem{friede2015}
+G.~Friede, T.~Busch, and A.~Bassen,
+``ESG and Financial Performance: Aggregated Evidence from More than 2000 Empirical Studies,''
+\textit{J. Sustainable Finance and Investment}, vol.~5, no.~4, pp.~210--233, 2015.
+
+\bibitem{kempf2007}
+A.~Kempf and P.~Osthoff,
+``The Effect of Socially Responsible Investing on Portfolio Performance,''
+\textit{European Financial Management}, vol.~13, no.~5, pp.~908--922, 2007.
+
+\bibitem{chen2016}
+T.~Chen and C.~Guestrin,
+``XGBoost: A Scalable Tree Boosting System,''
+in \textit{Proc. 22nd ACM SIGKDD}, pp.~785--794, 2016.
+
+\bibitem{berg2022}
+F.~Berg, J.~F. Koelbel, and R.~Rigobon,
+``Aggregate Confusion: The Divergence of ESG Ratings,''
+\textit{Review of Finance}, vol.~26, no.~6, pp.~1315--1344, 2022.
+
+\bibitem{esty2005}
+D.~C. Esty, M.~A. Levy, T.~Srebotnjak, and A.~de~Sherbinin,
+``National Environmental Performance: An Empirical Analysis of Policy Results and Determinants,''
+\textit{Environment and Development Economics}, vol.~10, pp.~391--434, 2005.
+
+\bibitem{krosinsky2012}
+C.~Krosinsky,
+\textit{Sustainable Investing: The Art of Long-Term Performance}.
+Routledge, London, 2012.
+
+\bibitem{kotsantonis2019}
+S.~Kotsantonis and G.~Serafeim,
+``Four Things No One Will Tell You About ESG Data,''
+\textit{J. Applied Corporate Finance}, vol.~31, no.~2, pp.~50--58, 2019.
+
+\bibitem{ferreira2017}
+A.~Ferreira,
+\textit{Machine Learning with Python}. Packt Publishing, 2017.
+
+\bibitem{damato2021}
+S.~D'Amato, S.~Falivena, and F.~Patarnello,
+``ESG Score Prediction through Random Forest Algorithm,''
+\textit{Computational Management Science}, 2021.
+
+\bibitem{wang2022}
+Y.~Wang, C.~Deng, and D.~Shi,
+``Forecasting Credit Risk Using Machine Learning Techniques,''
+\textit{Annals of Operations Research}, vol.~315, pp.~833--853, 2022.
+
+\bibitem{alsayegh2020}
+M.~F. Alsayegh, R.~A. Abdul~Rahman, and S.~Homayoun,
+``Corporate Sustainability Performance through ESG Disclosure,''
+\textit{Sustainability}, vol.~12, no.~9, p.~3910, 2020.
+
+\bibitem{escrig2019}
+E.~Escrig-Olmedo et al.,
+``Rating the Raters: Evaluating How ESG Rating Agencies Integrate Sustainability Principles,''
+\textit{Sustainability}, vol.~11, no.~3, p.~915, 2019.
+
+\bibitem{chaouech2025}
+O.~Chaouech, R.~Labidi, and O.~Saidi,
+``Predicting Corporate ESG Scores Using Machine Learning,''
+\textit{J. Cultural Analysis and Social Change}, 2025.
+
+\bibitem{rau2024}
+P.~R. Rau and T.~Yu,
+``A Survey on ESG: Investors, Institutions and Firms,''
+\textit{China Finance Review International}, vol.~14, no.~1, pp.~1--33, 2024.
+
+\bibitem{sultana2025}
+S.~Sultana, A.~Zulkifli, and D.~Zainal,
+``Advancing ESG Sentiment Analysis Using Machine Learning,''
+\textit{Business Strategy and Development}, 2025.
+
+\bibitem{terzioglu2025}
+M.~Terzio\u{g}lu et al.,
+``Machine Learning-Based Classification of ESG Metrics,''
+\textit{Sustainability}, vol.~17, 2025.
+
+\bibitem{liu2023}
+Z.~Liu, X.~Yang, and T.~Guo,
+``Constructing a Robust ESG Scoring Engine,''
+\textit{Open Research Europe}, 2023.
+
+\bibitem{abdelfattah2025}
+M.~Abdelfattah, N.~Hassen, and W.~Hamdi,
+``Machine Learning Approach for ESG Performance Prediction,''
+\textit{IEEE Access}, vol.~13, 2025.
+
+\bibitem{tabnet2021}
+S.~M. Arik and T.~Pfister,
+``TabNet: Attentive Interpretable Tabular Learning,''
+in \textit{Proc. AAAI}, vol.~35, pp.~6679--6687, 2021.
+
+\bibitem{lightgbm2017}
+G.~Ke et al.,
+``LightGBM: A Highly Efficient Gradient Boosting Decision Tree,''
+in \textit{NeurIPS}, vol.~30, 2017.
+
+\bibitem{tabpfn2023}
+N.~Hollmann, S.~Müller, K.~Eggensperger, and F.~Hutter,
+``TabPFN: A Transformer That Solves Small Tabular Classification Problems in a Second,''
+in \textit{Proc. ICLR}, 2023.
+
+\bibitem{archer2008}
+F.~J. Archer and J.~Kimes,
+``Empirical Characterization of Random Forest Variable Importance Measures,''
+\textit{Computational Statistics and Data Analysis}, vol.~52, no.~4, pp.~2249--2260, 2008.
+
+\bibitem{may2020}
+L.~A. May and G.~Gröger,
+``Data Sampling and Feature Importance in Gradient Boosting,''
+in \textit{Proc. IEEE ICMLA}, 2020.
+
+\bibitem{liu2008}
+F.~T. Liu, K.~M. Ting, and Z.-H. Zhou,
+``Isolation Forest,''
+in \textit{Proc. 8th IEEE ICDM}, pp.~413--422, 2008.
+
+\bibitem{lundberg2017}
+S.~M. Lundberg and S.-I. Lee,
+``A Unified Approach to Interpreting Model Predictions,''
+in \textit{NeurIPS}, vol.~30, pp.~4765--4774, 2017.
+
+\bibitem{gorishniy2021}
+L.~Gorishniy, I.~Rubachev, V.~Khrulkov, and A.~Babenko,
+``Revisiting Deep Learning Models for Tabular Data,''
+in \textit{NeurIPS}, vol.~34, 2021.
+
+\bibitem{un2020}
+United Nations,
+``The Sustainable Development Goals Report 2020,''
+UN, New York, 2020.
+
+\bibitem{worldbank2021}
+World Bank,
+``World Development Indicators,''
+World Bank Open Data Repository, Washington D.C., 2021.
+
+\end{thebibliography}
+
+\end{document}

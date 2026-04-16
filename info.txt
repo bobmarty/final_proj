@@ -1,0 +1,35 @@
+Title: Predictive ESG Performance Modeling: A Temporal Machine Learning Approach
+
+Author:
+Martin Boban
+Final Year
+Karunya Institute of Technology
+Coimbatore, India
+
+Titus
+Assistant Professor
+Karunya Institute of Technology
+Coimbatore, India
+
+Abstract:
+Traditional Environmental, Social, and Governance (ESG) prediction studies often fall victim to target leakage by mapping concurrent inputs to concurrent scores—thus reconstructing derived indexing formulas rather than producing valid forecasts. This paper proposes a rigorous Temporal Forecasting Framework applied to a deeply lagged panel dataset spanning 251 countries (2000-2023). By forcing the prediction of ESG scores at Time (T) utilizing strictly exogenous features and Macro Shock Volatility indicators from Time (T-1), our model breaks the deterministic boundary. 
+
+Furthermore, we propose a mathematically justified Hybrid Machine Learning ensemble pairing a Gradient Boosting Decision Tree (LightGBM) with an Attentive Deep Neural Network (TabNet). Residual error correlation analysis mathematically verifies the architectural diversity (r = 0.6625) required for successful hybridization, successfully dropping out-of-time Mean Squared Error (MSE) to 0.6313. Finally, an unsupervised Isolation Forest evaluates the dataset to extract leading indicators of risk, demonstrating an empirical Lift of 4.93x in flagging catastrophic sovereign ESG collapses.
+
+Keywords: ESG Prediction, Temporal Feature Engineering, Panel Econometrics, Residual Diversity, Isolation Forest, Anomaly Lift
+
+Introduction:
+The recent surge in sustainable development and responsible investment has generated mass demand for ESG intelligence. However, the existing literature is plagued by shallow temporal modeling and overlapping prediction parameters that inflate model accuracy via target leakage. To elevate ESG forecasting from simple interpolation to rigorous trajectory forecasting, modern studies must integrate spatial panel data with proper autoregressive lag features. 
+
+This study seeks to prove that an interpretable, mathematically justified hybrid machine learning structure can accurately forecast dynamic shifts in ESG indexing by analyzing historically lagging momentum and macro-volatility shocks (Year-over-Year differencing) across social, environmental, and economic spheres.
+
+Methodology:
+1. Feature Engineering: The dataset was transposed into a temporal panel. Base indicators were lagged by exactly one chronological period (T-1). Additionally, a YoY Volatility Shock metric was computed for every feature to capture sudden paradigm shifts in global health or emissions.
+2. Hybrid Architecture: We deploy a LightGBM architecture optimized for swift non-linear tabular extraction paired dynamically with TabNet, an attention-focused deep learning tabular model.
+3. Rigor Validation: Efficacy of the combination is validated via Residual Pearson Correlation. An Isolation Forest operates completely independent of the target vector to establish unsupervised anomaly cluster mapping.
+
+Results & Discussion:
+The model was tested exclusively out-of-time (Train: <=2018, Test: >=2019). The hybrid ensemble significantly outperformed individual algorithms by fusing non-overlapping learning paradigms. LightGBM global Feature Gain highlighted historical baseline momentum and recent unpredicted environmental shock (PM2.5 volatility) as the core predictors of sovereign rating crashes. In the Anomaly phase, the Unsupervised model successfully identified impending ESG collapses at a rate nearly 5x superior to baseline likelihood probabilities (Lift: 4.93x). 
+
+Conclusion:
+This paper rectifies fundamental flaws in empirical ESG machine learning approaches by enforcing temporal lagging and measuring true residual diversity within ensembled algorithms. Our implementation demonstrates a highly interpretable, analytically sound framework for institutional and intergovernmental risk forecasting.

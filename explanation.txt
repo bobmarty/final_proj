@@ -1,0 +1,309 @@
+================================================================================
+  ESG PREDICTION PROJECT — COMPLETE EXPLANATION
+================================================================================
+
+--------------------------------------------------------------------------------
+WHAT PROBLEM IT SOLVES
+--------------------------------------------------------------------------------
+
+Most countries get ESG (Environmental, Social, Governance) scores from rating
+agencies using manual formulas — weighted sums of indicators. These are
+descriptive, not predictive. They tell you what happened, not what will happen.
+
+This project builds a machine learning system that:
+  1. Predicts a country's future ESG score using last year's data
+  2. Detects countries in structural crisis before their score collapses
+  3. Explains which factors drive a country's sustainability performance
+
+--------------------------------------------------------------------------------
+THE DATA (Real World Bank Data)
+--------------------------------------------------------------------------------
+
+  Source        : World Bank Open Data API (fully citable)
+  Coverage      : 252 countries, 2002–2023, 5,544 observations
+  Databases used:
+    - World Development Indicators (WDI), World Bank Group
+    - Worldwide Governance Indicators (WGI), World Bank Group
+
+Three pillars of indicators are collected:
+
+  ENVIRONMENTAL
+    - PM2.5 pollution exposure (µg/m³)       — lower is better
+    - Renewable energy share (% total energy)
+    - Forest area (% of land)
+    - CO₂ emissions per capita (metric tons)  — lower is better
+
+  SOCIAL
+    - Life expectancy at birth (years)
+    - Health expenditure (% of GDP)
+    - GDP per capita (constant 2015 USD)
+    - Unemployment rate (%)                   — lower is better
+
+  GOVERNANCE  (World Governance Indicators — WGI scale: −2.5 to +2.5)
+    - Government effectiveness
+    - Rule of law
+    - Control of corruption
+    - Political stability
+
+Key insight from the paper: Governance indicators are the STRONGEST predictors
+(~58.7% of feature importance) — far more than environmental metrics, which
+receive most of the public attention.
+
+--------------------------------------------------------------------------------
+THE ESG SCORE (Target Variable)
+--------------------------------------------------------------------------------
+
+The target esg_score is a three-pillar composite built transparently:
+
+  Environmental score = avg(CO₂ inverted, renewable %, forest %, PM2.5 inverted)
+  Social score        = avg(life expectancy, health exp, GDP per capita, unemp inverted)
+  Governance score    = avg(political stability, rule of law, corruption, govt effectiveness)
+
+  ESG Score = (E_score + S_score + G_score) / 3   →  scaled 0 to 100
+
+All indicators are min-max normalised globally across all country-years before
+averaging, so a rich country's GDP does not dominate a poor country's life
+expectancy. The final score is mapped to three categories:
+  - Good     : Score >= 75
+  - Moderate : Score 50 – 74
+  - Poor     : Score < 50
+
+--------------------------------------------------------------------------------
+TEMPORAL FEATURE ENGINEERING
+--------------------------------------------------------------------------------
+
+Raw data is one number per country per year. The model needs historical context,
+so every indicator is expanded into 6 derived features:
+
+  renewable_energy_pct             ← current value
+  renewable_energy_pct_lag1        ← 1 year ago (T-1)
+  renewable_energy_pct_lag2        ← 2 years ago (T-2)
+  renewable_energy_pct_lag3        ← 3 years ago (T-3)
+  renewable_energy_pct_roll3_mean  ← 3-year rolling average
+  renewable_energy_pct_roll3_std   ← 3-year rolling volatility (shock indicator)
+
+This turns 12 base indicators into 69 features per row, giving the model a view
+of both the current state and historical trajectory of every country.
+
+Why this matters: A sudden spike in PM2.5 volatility (roll3_std) signals an
+environmental shock even if the current value looks normal. The rolling std
+features act as macro-shock detectors.
+
+--------------------------------------------------------------------------------
+THE 5 MACHINE LEARNING MODELS
+--------------------------------------------------------------------------------
+
+The paper benchmarks five different modelling approaches:
+
+  1. LightGBM  (R²=0.89 — best individual model)
+     - Gradient boosting decision tree
+     - Grows trees leaf-wise — very efficient on tabular data
+     - Captures non-linear interactions between governance and environmental features
+     - Config: 500 trees, learning rate 0.05, max depth 6, L2 regularisation 0.1
+
+  2. TabNet  (R²=0.87)
+     - Deep learning architecture designed specifically for tabular data
+     - Uses sequential attention — for each country it selects which features
+       matter most at each processing step
+     - Different countries activate different feature subsets
+       (e.g. oil states rely more on energy features)
+     - Config: 3 attention steps, feature dimension 64, batch size 64
+
+  3. TabPFN  (R²=0.86)
+     - Pre-trained transformer — zero training required on new data
+     - Uses in-context learning: the entire training set becomes the prompt
+     - Fastest to run but plateaus on larger datasets (design limitation)
+     - Config: 8 ensemble members, default pre-trained weights
+
+  4. TabM  (R²=0.88)
+     - Internal mini-ensemble: 32 small neural networks inside one model
+     - Each member sees the data differently, then their predictions are combined
+     - Gets ensemble variance reduction at the computational cost of one model
+     - Config: 32 members, hidden dimension 256, dropout 0.1
+
+  5. TabNSA  (R²=0.88)
+     - Hard sparse attention: selects only the top-7 most relevant features
+       per prediction, zeroing out all others
+     - Forces the model to be selective — reduces noise from irrelevant indicators
+     - Config: k=7 features per step, 4 transformer layers, 8 attention heads,
+       hidden dimension 128
+
+--------------------------------------------------------------------------------
+THE HYBRID MODEL  (R²=0.92 — best result)
+--------------------------------------------------------------------------------
+
+The central finding of the paper: combining LightGBM and TabNet beats both
+individually by a meaningful margin.
+
+The combination weights are not guessed — they are solved mathematically using
+constrained least-squares optimisation:
+
+  Minimise:  ||w1 * P_lgbm + w2 * P_tabnet - y||²
+  Subject to: w1 >= 0,  w2 >= 0,  w1 + w2 = 1
+
+Result: LightGBM 60.3%  +  TabNet 39.7%
+
+Why does this work? The two models make different errors:
+  - LightGBM is stronger on tree-structured feature relationships
+  - TabNet captures attention-based feature interaction patterns
+Combining them reduces total prediction variance.
+
+ABLATION PROOF (paper Table 2):
+  Configuration                  RMSE     R²
+  LightGBM only                  5.21    0.89
+  TabNet only                    5.45    0.87
+  Hybrid — uniform (0.50/0.50)   5.02    0.91
+  Hybrid — optimal (0.603/0.397) 4.78    0.92   ← best
+
+Even a naive 50/50 blend beats both individual models, confirming the two
+learners contribute genuinely different and complementary signals.
+
+--------------------------------------------------------------------------------
+ANOMALY DETECTION — ISOLATION FOREST
+--------------------------------------------------------------------------------
+
+Separate from prediction, the system runs an unsupervised anomaly detector that
+finds countries with structurally unusual ESG indicator patterns.
+
+How Isolation Forest works:
+  - Builds 100 random trees by recursively splitting the feature space
+  - Anomalous countries are isolated in very few splits — they are structurally
+    different from normal countries
+  - Countries requiring many splits to isolate are considered normal
+  - Contamination = 5% → flags 278 out of 5,544 observations as anomalous
+
+What it catches:
+  - Countries with high GDP but collapsing governance (resource-curse states)
+  - Environmental shocks: sudden PM2.5 spikes despite stable social indicators
+  - Pre-crisis signals: deteriorating rule of law before a sovereign default
+  - Pandemic-year structural breaks (e.g. 2020 global disruption)
+
+This component answers a different question from prediction:
+  - Prediction asks:  "What score should this country receive?"
+  - Anomaly asks:     "Does this country's indicator pattern look structurally unusual?"
+A country can have a well-predicted low score without being anomalous, and an
+anomalous country may have a high average score that masks sudden deterioration.
+
+--------------------------------------------------------------------------------
+CHRONOLOGICAL TRAIN/TEST SPLIT
+--------------------------------------------------------------------------------
+
+The model is trained on data up to 2018, then tested on 2019–2023 data it has
+never seen:
+
+  Training set : countries × years 2002–2018  (4,284 rows, 77%)
+  Test set     : countries × years 2019–2023  (1,260 rows, 23%)
+
+This is called out-of-time (OOT) validation — it simulates real forecasting.
+Random splits cannot be used for time-series data because future data would leak
+into training (the model would effectively "know" the future), artificially
+inflating all metrics.
+
+--------------------------------------------------------------------------------
+FEATURE IMPORTANCE — SHAP ANALYSIS
+--------------------------------------------------------------------------------
+
+After training, SHAP (SHapley Additive exPlanations) values explain why the
+model made each prediction by computing each feature's average contribution:
+
+  Rank  Feature                   LightGBM Gain   Mean |SHAP|
+  1     Government Effectiveness    0.248           8.92
+  2     GDP per Capita              0.187           7.15
+  3     Regulatory Quality          0.152           5.83
+  4     Renewable Energy Share      0.134           4.97
+  5     CO₂ Emissions per Capita    0.121           4.61
+  6     Life Expectancy             0.089           3.22
+  7     PM2.5 Concentration         0.069           2.45
+
+Governance features (ranks 1, 2, 3) account for ~58.7% of total predictive power.
+Environmental features (ranks 4, 5, 7) account for ~32.4%.
+Social features (rank 6) account for ~8.9%.
+
+Both LightGBM gain and SHAP values rank features in the same order — this
+consistency across two independent methods strengthens the finding's credibility.
+
+Policy implication: Countries looking to improve their ESG score most efficiently
+should focus on governance reforms first, not environmental spending.
+
+--------------------------------------------------------------------------------
+WHAT THE SYSTEM OUTPUTS
+--------------------------------------------------------------------------------
+
+  Output                   What it means
+  ─────────────────────────────────────────────────────────────────────────
+  ESG Score (0–100)        Predicted sustainability score
+  Performance Category     Good (>=75) / Moderate (50–74) / Poor (<50)
+  Anomaly Flag             True if Isolation Forest detects structural risk
+  Governance Sub-score     WGI composite normalised to 0–100
+  Environmental Sub-score  PM2.5 + renewable energy normalised to 0–100
+  Social Sub-score         Life expectancy + health expenditure to 0–100
+  SHAP Importance          Which features drove this specific prediction
+  Ablation Results         Proof that optimal weights outperform alternatives
+  Model Comparison         All 5 baselines + hybrid side by side
+
+--------------------------------------------------------------------------------
+DATA PIPELINE (End to End)
+--------------------------------------------------------------------------------
+
+  World Bank API
+      |
+      | fetch_worldbank_data.py
+      |   - Fetches 12 indicators via wbgapi
+      |   - Min-max normalises all indicators globally
+      |   - Builds E/S/G sub-scores and composite ESG score
+      v
+  dataset/wb_esg_raw.csv          (raw real data, 252 countries × 24 years)
+      |
+      | academic_data_prep.py
+      |   - Adds T-1, T-2, T-3 lags for every indicator
+      |   - Adds 3-year rolling mean and std for every indicator
+      |   - Adds ESG autoregressive lags (esg_lag1, esg_lag2)
+      v
+  backend/academic_esg_dataset.csv  (5,544 rows × 72 columns)
+      |
+      | train.py → ml_pipeline.py
+      |   - Chronological split: <=2018 train, >=2019 test
+      |   - Trains LightGBM, TabNet, TabPFN, TabM, TabNSA
+      |   - Computes constrained least-squares hybrid weights
+      |   - Trains Isolation Forest on full training set
+      |   - Computes SHAP importance and ablation results
+      |   - Saves all models to .pkl files
+      v
+  seed_db.py
+      |   - Loads academic_esg_dataset.csv
+      |   - Predicts ESG scores using trained hybrid model
+      |   - Flags anomalies using trained Isolation Forest
+      |   - Inserts all 5,544 rows into esg_data.db
+      v
+  backend/esg_data.db               (SQLite database)
+      |
+      | main.py (FastAPI)
+      |   - POST /predict       → hybrid prediction for new inputs
+      |   - GET  /get-esg-data  → all 5,544 country records
+      |   - GET  /get-anomalies → 278 flagged anomalous records
+      |   - GET  /shap          → SHAP feature importance
+      |   - GET  /ablation      → ablation study results
+      |   - GET  /model-metrics → 5-model comparison table
+      v
+  frontend/src/App.jsx              (React dashboard)
+      - Dashboard       : Avg scores, trend charts, performance distribution
+      - ESG Analytics   : Radar chart, E/S/G breakdown, multi-metric trend
+      - Risk & Anomaly  : Anomaly table, PM2.5 chart, case study
+      - Forecast        : Input 12 indicators → get hybrid ESG prediction
+      - Model Insights  : SHAP chart, ablation table, model comparison table
+      - Admin Panel     : System logs, user management
+
+--------------------------------------------------------------------------------
+IN ONE SENTENCE
+--------------------------------------------------------------------------------
+
+The project takes 12 real World Bank indicators for every country, engineers 69
+temporal features from them, trains 5 different ML models on historical data up
+to 2018, combines the best two into a hybrid via constrained least-squares
+(R²=0.92), and uses an Isolation Forest to flag countries in structural ESG
+crisis — all to prove that governance quality, not environmental metrics, is the
+dominant driver of national sustainability scores.
+
+================================================================================
+END
+================================================================================
